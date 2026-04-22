@@ -1,0 +1,64 @@
+from rest_framework import serializers
+from django.contrib.auth.models import User
+from django.contrib.auth import authenticate
+
+class RegisterSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(
+        write_only=True,
+        min_length=8,
+        style={'input_type':'password'}
+    )
+    password2 = serializers.CharField(
+        write_only=True,
+        style={'input_type':'password'}
+    )
+
+    class Meta:
+        model = User
+        fields = ['username','email','password','password2']
+
+    
+    # validate both passwords
+    def validate(self,attrs):
+        if attrs['password'] != attrs['password2']:
+            raise serializers.ValidationError({"password": "Passwords do not match."})
+        return attrs
+    
+    # Validate email is unique
+    def validate_email(self, value):
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("Email already in use.")
+        return value
+    
+    # Create User
+    def create(self, validated_data):
+        validated_data.pop('password2')   # remove password2 not needed
+        user = User.objects.create_user(
+            username=validated_data['username'],
+            email=validated_data['email'],
+            password=validated_data['password']
+        )
+        return user
+    
+
+class LoginSerializer(serializers.Serializer):
+    username = serializers.CharField()
+    password = serializers.CharField(
+        write_only=True,
+        style={'input_type': 'password'}
+    )
+
+    def validate(self, attrs):
+        username = attrs.get('username')
+        password = attrs.get('password')
+
+        user = authenticate(username=username, password=password)
+
+        if not user:
+            raise serializers.ValidationError("Invalid username or password.")
+
+        if not user.is_active:
+            raise serializers.ValidationError("This account is disabled.")
+
+        attrs['user'] = user
+        return attrs
