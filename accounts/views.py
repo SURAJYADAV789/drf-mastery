@@ -2,12 +2,14 @@ from django.shortcuts import render
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import RegisterSerializer, LoginSerializer
+from .serializers import RegisterSerializer, LoginSerializer, PostSerializer
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.conf import settings
 from rest_framework_simplejwt.exceptions import TokenError
 from .backends import CustomTokenObtainPairSerializer
+from .models import Post
+
 
 # Create your views here.
 class RegisterView(APIView):
@@ -151,3 +153,93 @@ class LogoutView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+
+class PostListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    # GET /posts/ → list all posts
+    def get(self, request):
+        posts = Post.objects.filter(user=request.user)
+        serializer = PostSerializer(posts, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    # POST /posts/ → create a post
+    def post(self, request):
+        serializer = PostSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(user=request.user) # attached login user 
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+
+class PostDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self, pk, user):
+        try:
+            return Post.objects.get(pk=pk, user=user)
+        except Post.DoesNotExist:
+            return None
+        
+
+    # GET /posts/1/ → get single post
+    def get(self, request, pk):
+        post = self.get_object(pk, request.user)
+
+        if not post:
+            return Response(
+                {
+                    'error': 'Post not found.'
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+        serializer = PostSerializer(post)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    # PUT /posts/1/ → full update
+    def put(self, request, pk):
+        post = self.get_object(pk, request.user)
+        if not post:
+            return Response(
+                {
+                    'error': 'Post not found.'
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+        serializer = PostSerializer(Post, data=request.data)
+        if serializer.is_valid():
+            serializer.save(user=request.user)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    # PATCH /posts/1/ → partial update
+    def patch(self, request, pk):
+        post = self.get_object(pk, request.user)
+        if not post:
+            return Response(
+                {
+                    'error': 'Post not found.'
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+        serializer = PostSerializer(post, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def delete(self, request, pk):
+        post = self.get_object(pk, request.user)
+        if not post:
+            return Response(
+                {
+                    'error': 'Post not found.'
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+        post.delete()
+        return Response(
+            {"message": "Post deleted."},
+            status=status.HTTP_204_NO_CONTENT
+        )
+
