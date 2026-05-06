@@ -85,3 +85,77 @@ class CommentSerializers(serializers.ModelSerializer):
         read_only_fields = ['id', 'user', 'post', 'created_at']
 
         
+
+class UserRepresentationSerializer(serializers.ModelSerializer):
+    """
+    How a user looks when nested inside another resource
+    """
+
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email']
+
+class PostRepresentationSerializer(serializers.ModelSerializer):
+    user = UserRepresentationSerializer(read_only=True)
+
+    # Custom field — computed, not in DB
+    word_count = serializers.SerializerMethodField()
+    is_owner = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Post
+        fields = [
+            'id', 'user', 'title', 'content',
+            'word_count', 'is_owner',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'user', 'created_at', 'updated_at']
+
+    def get_word_count(self, obj):
+        return len(obj.content.split())
+    
+    def get_is_owner(self, obj):
+        # Access request via content
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return obj.user == request.user
+
+        return False
+
+
+
+class PostWriteSerializer(serializers.ModelSerializer):
+    """
+    What the client sends to CREATE or UPDATE a post
+    Simple. Just the fields we need.
+    """
+    class Meta:
+        model = Post
+        fields = ['title', 'content']
+
+
+class PostReadSerializer(serializers.ModelSerializer):
+    """
+    What the client receives when READING a post
+    Rich. Full nested data.
+    """
+    user = UserRepresentationSerializer(read_only=True)
+    word_count = serializers.SerializerMethodField()
+    is_owner = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Post
+        fields = [
+            'id', 'user', 'title', 'content',
+            'word_count', 'is_owner',
+            'created_at', 'updated_at'
+        ]
+
+    def get_word_count(self, obj):
+        return len(obj.content.split())
+
+    def get_is_owner(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return obj.user == request.user
+        return False

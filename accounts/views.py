@@ -2,7 +2,7 @@ from django.shortcuts import render
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import RegisterSerializer, LoginSerializer, PostSerializer, CommentSerializers
+from .serializers import RegisterSerializer, LoginSerializer, PostSerializer, CommentSerializers, PostReadSerializer, PostWriteSerializer
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.conf import settings
@@ -161,20 +161,21 @@ class PostListCreateView(APIView):
     # GET /posts/ → list all posts
     def get(self, request):
         posts = PostService.get_user_posts(request.user)
-        serializer = PostSerializer(posts, many=True)
+        serializer = PostReadSerializer(posts, many=True, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
     
     # POST /posts/ → create a post
     def post(self, request):
-        serializer = PostSerializer(data=request.data)
+        # WRITE → use simple serializer
+        serializer = PostWriteSerializer(data=request.data)
         if serializer.is_valid():
             #view ask service to create
             post = PostService.create_post(
                 user=request.user,
-                validated_data=serializer.data
+                validated_data=serializer.validated_data
             )
-             
-            return Response(PostSerializer(self.post).data, status=status.HTTP_201_CREATED)
+             # Return rich representation after creation
+            return Response(PostReadSerializer(post, context={'request':request}).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 
