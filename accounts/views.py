@@ -10,7 +10,9 @@ from rest_framework_simplejwt.exceptions import TokenError
 from .backends import CustomTokenObtainPairSerializer
 from .models import Post, Comments
 from .services import PostService, CommentService
-
+from django.views.decorators.cache import cache_control
+from django.utils.decorators import method_decorator
+from django.utils.cache import patch_cache_control
 
 # Create your views here.
 class RegisterView(APIView):
@@ -69,6 +71,8 @@ class LoginView(APIView):
                 max_age=7 * 24 * 60 * 60  # 7 days in seconds
             )
 
+            # Never cache login response
+            patch_cache_control(response, no_store=True)
             return response
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -154,7 +158,10 @@ class LogoutView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-
+@method_decorator(
+    cache_control(public=True, max_age=60),
+    name='get'  # apply only on get method
+)
 class PostListCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -200,8 +207,19 @@ class PostDetailView(APIView):
                 {'error': 'Not your posts'},
                 status=status.HTTP_404_NOT_FOUND
             )
-        serializer = PostSerializer(post)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        serializer = PostSerializer(post,  context={'request': request})
+        response = Response(serializer.data, status=status.HTTP_200_OK)
+
+        # Private cache — only browser, not CDN
+        # max_age=120 — cache for 2 minutes
+        patch_cache_control(
+            response,
+            private=True,
+            max_age=120,
+            must_revalidate=True
+        )
+
+        return response
     
     # PUT /posts/1/ → full update
     def put(self, request, pk):

@@ -1,4 +1,5 @@
 from .models import Post, Comments
+from django.core.cache import cache
 
 class PostService:
     '''
@@ -8,15 +9,33 @@ class PostService:
 
     @staticmethod
     def get_user_posts(user):
-        return Post.objects.filter(user=user).order_by('-created_at')
-    
+        cache_key = f'user_posts_{user.id}'
+
+        # check first cache
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+        
+        # Not in cache hit Db
+        post = Post.objects.filter(user=user).order_by('-created_at')
+
+        cache.set(cache_key, post, timeout=60)
+
+        return post
+        
     @staticmethod
     def create_post(user, validated_data):
-        return Post.objects.create(
+        post =  Post.objects.create(
             user=user,
             title=validated_data['title'],
             content=validated_data['content']
         )
+    
+        # Invalid Cache when we post created
+        cache_key = f'user_posts_{user.id}'
+        cache.delete(cache_key)
+        return post
+    
     
     @staticmethod
     def get_post_by_id(pk):
@@ -35,6 +54,9 @@ class PostService:
     
     @staticmethod
     def delete_post(post):
+        # Invalidate cache when post deleted
+        cache_key = f'user_posts_{post.user.id}'
+        cache.delete(cache_key)
         post.delete()
 
 
