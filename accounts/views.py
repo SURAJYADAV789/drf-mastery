@@ -9,6 +9,7 @@ from django.conf import settings
 from rest_framework_simplejwt.exceptions import TokenError
 from .backends import CustomTokenObtainPairSerializer
 from .models import Post, Comments
+from .services import PostService, CommentService
 
 
 # Create your views here.
@@ -159,7 +160,7 @@ class PostListCreateView(APIView):
 
     # GET /posts/ → list all posts
     def get(self, request):
-        posts = Post.objects.filter(user=request.user)
+        posts = PostService.get_user_posts(request.user)
         serializer = PostSerializer(posts, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
@@ -167,30 +168,35 @@ class PostListCreateView(APIView):
     def post(self, request):
         serializer = PostSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save(user=request.user) # attached login user 
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            #view ask service to create
+            post = PostService.create_post(
+                user=request.user,
+                validated_data=serializer.data
+            )
+             
+            return Response(PostSerializer(self.post).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 
 class PostDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get_object(self, pk, user):
-        try:
-            return Post.objects.get(pk=pk, user=user)
-        except Post.DoesNotExist:
-            return None
-        
 
     # GET /posts/1/ → get single post
     def get(self, request, pk):
-        post = self.get_object(pk, request.user)
+        post = PostService.get_post_by_id(pk)
 
         if not post:
             return Response(
                 {
                     'error': 'Post not found.'
                 },
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        if post.user != request.user:
+            return Response(
+                {'error': 'Not your posts'},
                 status=status.HTTP_404_NOT_FOUND
             )
         serializer = PostSerializer(post)
@@ -214,7 +220,7 @@ class PostDetailView(APIView):
 
     # PATCH /posts/1/ → partial update
     def patch(self, request, pk):
-        post = self.get_object(pk, request.user)
+        post = PostService.get_post_by_id(pk)
         if not post:
             return Response(
                 {
@@ -222,14 +228,22 @@ class PostDetailView(APIView):
                 },
                 status=status.HTTP_404_NOT_FOUND
             )
+        if post.user != request.user:
+            return Response(
+                {"error": "Not your post."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         serializer = PostSerializer(post, data=request.data, partial=True)
         if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            post = PostService.update_post(
+                post, serializer.validated_data
+            )
+            return Response(PostSerializer(post).data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     def delete(self, request, pk):
-        post = self.get_object(pk, request.user)
+        post = PostService.get_post_by_id(pk)
         if not post:
             return Response(
                 {
@@ -237,7 +251,13 @@ class PostDetailView(APIView):
                 },
                 status=status.HTTP_404_NOT_FOUND
             )
-        post.delete()
+        if post.user != request.user:
+            return Response(
+                {"error": "Not your post."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        PostService.delete_post(post)
         return Response(
             {"message": "Post deleted."},
             status=status.HTTP_204_NO_CONTENT
