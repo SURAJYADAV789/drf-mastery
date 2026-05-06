@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
-from .models import Post
+from .models import Post, Comments
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
@@ -73,5 +73,15 @@ class PostSerializer(serializers.ModelSerializer):
         model = Post
         fields = ['id', 'user', 'title', 'content', 'created_at', 'updated_at']
         read_only_fields = ['id', 'user', 'created_at', 'updated_at']
+
+
+class CommentSerializers(serializers.ModelSerializer):
+    user = serializers.StringRelatedField(read_only=True)
+    post = serializers.PrimaryKeyRelatedField(read_only=True)
+
+    class Meta:
+        model = Comments
+        fields = ['id', 'user', 'post', 'content', 'created_at']
+        read_only_fields = ['id', 'user', 'post', 'created_at']
 
         

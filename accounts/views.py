@@ -2,13 +2,13 @@ from django.shortcuts import render
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import RegisterSerializer, LoginSerializer, PostSerializer
+from .serializers import RegisterSerializer, LoginSerializer, PostSerializer, CommentSerializers
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.conf import settings
 from rest_framework_simplejwt.exceptions import TokenError
 from .backends import CustomTokenObtainPairSerializer
-from .models import Post
+from .models import Post, Comments
 
 
 # Create your views here.
@@ -240,6 +240,98 @@ class PostDetailView(APIView):
         post.delete()
         return Response(
             {"message": "Post deleted."},
+            status=status.HTTP_204_NO_CONTENT
+        )
+
+
+class CommentListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, posk_pk):
+        comments = Comments.objects.filter(post__pk=posk_pk)
+        serializer = CommentSerializers(comments, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+
+    def post(self, request, post_pk):
+        # find the post first
+        try:
+            post = Post.objects.get(pk=post_pk)
+        except Post.DoesNotExist:
+            return Response(
+                {'error': 'Post not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        serializer = CommentSerializers(data=request.data)
+        if serializer.is_valid():
+            serializer.save(user=request.user, post=post)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+
+
+class CommentDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self, pk, user):
+        try:
+            comment = Comments.objects.get(pk=pk)
+            if comment.user != user:
+                return None, 'forbidden'
+            return comment, None
+        except Comments.DoesNotExist:
+            return None, 'not_found'
+        
+
+    def get(self, request, post_pk, pk):
+        comment, error = self.get_object(pk, request.user)
+        if error == 'not_found':
+            return Response(
+                {'error': 'Comment Not Found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        if error == 'forbidden':
+            return Response(
+                {'error': 'Not your comment'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        serializer = CommentSerializers(comment)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    def patch(self, request, post_pk, pk):
+        comment, error = self.get_object(pk, request.user)
+        if error == 'not_found':
+            return Response(
+                {'error': 'Comment Not Found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        if error == 'forbidden':
+            return Response(
+                {'error': 'Not your comment'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        serializer = CommentSerializers(comment, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def delete(self, request, post_pk, pk):
+        comment, error = self.get_object(pk, request.user)
+        if error == 'not_found':
+            return Response(
+                {"error": "Comment not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        if error == 'forbidden':
+            return Response(
+                {"error": "Not your comment."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        comment.delete()
+        return Response(
+            {"message": "Comment deleted."},
             status=status.HTTP_204_NO_CONTENT
         )
 
